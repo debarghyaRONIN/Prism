@@ -1,19 +1,23 @@
 "use client";
 
-import { useState, useRef, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { format, addDays, startOfDay, differenceInDays } from 'date-fns';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { motion, AnimatePresence, useDragControls, PanInfo } from 'framer-motion';
+import { format, parseISO, isAfter, isBefore, isEqual, addDays, addMonths } from 'date-fns';
+import { BsCardList, BsCalendar3, BsPhone, BsThreeDots, BsPencil, BsTrash } from 'react-icons/bs';
+import { FaRegCircle, FaCheckCircle, FaTimesCircle, FaExclamationCircle, FaFlag } from 'react-icons/fa';
 
+// Define the missing interfaces at the top of the file
 interface Task {
   id: string;
   title: string;
-  description: string;
+  description?: string;
   status: string;
   priority: string;
-  dueDate: Date;
-  assignee: { name: string; avatar: string };
-  type: string;
-  connections: string[]; // Array of connected task IDs
+  dueDate?: Date | string;
+  assignee?: {
+    name: string;
+  };
+  connections?: string[];
 }
 
 interface TimelineProps {
@@ -21,485 +25,688 @@ interface TimelineProps {
   onClose: () => void;
 }
 
-type ViewMode = 'timeline' | 'overview' | 'graph';
+type ViewMode = 'timeline' | 'overview' | 'mobile';
 
-export default function Timeline({ tasks, onClose }: TimelineProps) {
-  // State to track which view mode is active - show graph view by default for demonstration
-  const [viewMode, setViewMode] = useState<ViewMode>('graph');
-  const graphContainerRef = useRef<HTMLDivElement>(null);
-  const taskNodeRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  const [arrows, setArrows] = useState<Array<{from: string, to: string, path: string}>>([]);
+// Task statuses with respective icons and colors
+const statusConfig: Record<string, { icon: React.ElementType; color: string }> = {
+  'To Do': { icon: FaRegCircle, color: 'text-neutral-500' },
+  'In Progress': { icon: FaExclamationCircle, color: 'text-amber-500' },
+  'Completed': { icon: FaCheckCircle, color: 'text-emerald-500' },
+  'Cancelled': { icon: FaTimesCircle, color: 'text-rose-500' },
+};
 
-  // Sort tasks by due date
-  const sortedTasks = [...tasks].sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
-  
-  // Find earliest and latest dates
-  const earliestDate = sortedTasks.length > 0 ? startOfDay(sortedTasks[0].dueDate) : startOfDay(new Date());
-  const latestDate = sortedTasks.length > 0 ? startOfDay(sortedTasks[sortedTasks.length - 1].dueDate) : startOfDay(addDays(new Date(), 7));
-  
-  // Create array of dates for timeline
-  const daysBetween = differenceInDays(latestDate, earliestDate) + 1;
-  const dateArray = Array.from({ length: daysBetween }, (_, i) => addDays(earliestDate, i));
-  
-  // Helper to position task on timeline
-  const getTaskPosition = (taskDate: Date) => {
-    const days = differenceInDays(startOfDay(taskDate), earliestDate);
-    return `${(days / (daysBetween - 1)) * 100}%`;
+// Priority colors
+const priorityColors: Record<string, string> = {
+  'Low': 'bg-blue-500',
+  'Medium': 'bg-amber-500',
+  'High': 'bg-rose-500',
+};
+
+// Timeline component
+const Timeline: React.FC<TimelineProps> = ({ tasks, onClose }) => {
+  const [viewMode, setViewMode] = useState<ViewMode>('timeline');
+  const [taskPositions, setTaskPositions] = useState<{[key: string]: {x: number, y: number}}>({});
+  const [selectedTask, setSelectedTask] = useState<string | null>(null);
+  const [activeTaskMenu, setActiveTaskMenu] = useState<string | null>(null);
+  const [isPanning, setIsPanning] = useState(false);
+  const [touchCount, setTouchCount] = useState(0);
+  const [viewOffset, setViewOffset] = useState({ x: 0, y: 0 });
+  const [isMobile, setIsMobile] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const dragControls = useDragControls();
+
+  // Detect mobile device on component mount
+  useEffect(() => {
+    const checkIsMobile = () => {
+      const mobileQuery = window.matchMedia('(max-width: 768px)');
+      setIsMobile(mobileQuery.matches);
+      
+      // If on mobile device, default to mobile view
+      if (mobileQuery.matches) {
+        setViewMode('mobile');
+      }
+    };
+    
+    // Check initially
+    checkIsMobile();
+    
+    // Add listener for screen size changes
+    const mobileQuery = window.matchMedia('(max-width: 768px)');
+    mobileQuery.addEventListener('change', checkIsMobile);
+    
+    // Cleanup
+    return () => {
+      mobileQuery.removeEventListener('change', checkIsMobile);
+    };
+  }, []);
+
+  // Helper function to compare dates that could be string or Date objects
+  const compareTaskDates = (dateA?: Date | string, dateB?: Date | string): number => {
+    if (!dateA && !dateB) return 0;
+    if (!dateA) return 1;
+    if (!dateB) return -1;
+    
+    const dateObjA = dateA instanceof Date ? dateA : parseISO(dateA);
+    const dateObjB = dateB instanceof Date ? dateB : parseISO(dateB);
+    
+    return isAfter(dateObjA, dateObjB) ? 1 : -1;
   };
-  
-  // Get color based on priority
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'urgent': return '#ef4444';
-      case 'high': return '#f59e0b';
-      case 'medium': return '#0ea5e9';
-      case 'low': return '#22c55e';
-      default: return '#737373';
+
+  // Sort tasks by due date (earliest first)
+  const sortedTasks = useMemo(() => {
+    return [...tasks].sort((a, b) => {
+      return compareTaskDates(a.dueDate, b.dueDate);
+    });
+  }, [tasks]);
+
+  // Calculate positions for tasks
+  useEffect(() => {
+    if (viewMode !== 'timeline' || !containerRef.current) return;
+
+    // Define a fixed width for task nodes
+    const nodeWidth = 240;
+    const nodeHeight = 100;
+    const horizontalSpacing = 300; // Space between columns
+    const verticalSpacing = 200; // Space between rows
+
+    // Group tasks by month
+    const tasksByMonth: {[key: string]: Task[]} = {};
+    sortedTasks.forEach(task => {
+      if (!task.dueDate) return;
+      
+      const monthKey = format(
+        task.dueDate instanceof Date ? task.dueDate : parseISO(task.dueDate), 
+        'yyyy-MM'
+      );
+      
+      if (!tasksByMonth[monthKey]) {
+        tasksByMonth[monthKey] = [];
+      }
+      tasksByMonth[monthKey].push(task);
+    });
+
+    // Calculate positions
+    const newPositions: {[key: string]: {x: number, y: number}} = {};
+    let monthIndex = 0;
+
+    Object.entries(tasksByMonth).forEach(([month, monthTasks]) => {
+      // For each month, create a new column
+      monthTasks.forEach((task, taskIndex) => {
+        newPositions[task.id] = {
+          x: monthIndex * horizontalSpacing + 100,
+          y: taskIndex * verticalSpacing + 100
+        };
+      });
+      monthIndex++;
+    });
+
+    // Position tasks without due dates at the end
+    const tasksWithoutDueDate = sortedTasks.filter(task => !task.dueDate);
+    tasksWithoutDueDate.forEach((task, index) => {
+      newPositions[task.id] = {
+        x: monthIndex * horizontalSpacing + 100,
+        y: index * verticalSpacing + 100
+      };
+    });
+
+    setTaskPositions(newPositions);
+  }, [sortedTasks, viewMode]);
+
+  // Group tasks by status
+  const getTasksByStatus = () => {
+    const byStatus: {[key: string]: Task[]} = {
+      'To Do': [],
+      'In Progress': [],
+      'Completed': [],
+      'Cancelled': [],
+    };
+
+    sortedTasks.forEach(task => {
+      if (byStatus[task.status]) {
+        byStatus[task.status].push(task);
+      }
+    });
+
+    return byStatus;
+  };
+
+  // Handle touch gesture events for mobile view
+  const handleTouchStart = (e: React.TouchEvent, taskId: string) => {
+    if (viewMode !== 'mobile') return;
+    
+    // Store how many fingers are touching the screen
+    setTouchCount(e.touches.length);
+    
+    // For single finger touches on a task, start a timer for long press
+    if (e.touches.length === 1) {
+      longPressTimerRef.current = setTimeout(() => {
+        setSelectedTask(taskId);
+        // Provide haptic feedback if available
+        if (navigator.vibrate) {
+          navigator.vibrate(100);
+        }
+      }, 2000); // 2 seconds long press
+    }
+    
+    // For two finger touches, prepare for panning the view
+    if (e.touches.length === 2) {
+      setIsPanning(true);
+      // Cancel any active long press
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
     }
   };
-
-  // Group tasks by status for overview
-  const tasksByStatus = {
-    'To Do': sortedTasks.filter(task => task.status === 'To Do'),
-    'In Progress': sortedTasks.filter(task => task.status === 'In Progress'),
-    'Done': sortedTasks.filter(task => task.status === 'Done')
+  
+  // Handle task actions for mobile view
+  const handleTaskAction = (action: 'edit' | 'delete', taskId: string) => {
+    // Close the menu
+    setActiveTaskMenu(null);
+    
+    // For this example, we'll just log the action
+    // In a real app, you would implement editing or deleting logic
+    console.log(`${action} task: ${taskId}`);
+    
+    // Example implementation:
+    // if (action === 'edit') {
+    //   // Open task edit form/modal
+    // } else if (action === 'delete') {
+    //   // Show confirmation dialog and delete task
+    // }
+  };
+  
+  // Enhanced touch move handler with inertial scrolling
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (viewMode !== 'mobile') return;
+    
+    // Cancel long press if the finger moves significantly
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    
+    // Handle two-finger panning with improved calculation
+    if (e.touches.length === 2 && isPanning) {
+      e.preventDefault(); // Prevent default scrolling
+      
+      // Calculate the midpoint of the two touches
+      const touch1 = e.touches[0];
+      const touch2 = e.touches[1];
+      
+      // Store these positions for delta calculation
+      const currentMidX = (touch1.clientX + touch2.clientX) / 2;
+      const currentMidY = (touch1.clientY + touch2.clientY) / 2;
+      
+      // Get previous touch positions from ref
+      const target = e.currentTarget as HTMLElement;
+      const prevMidX = target.dataset.prevTouchX ? parseFloat(target.dataset.prevTouchX) : currentMidX;
+      const prevMidY = target.dataset.prevTouchY ? parseFloat(target.dataset.prevTouchY) : currentMidY;
+      
+      // Calculate movement delta
+      const deltaX = currentMidX - prevMidX;
+      const deltaY = currentMidY - prevMidY;
+      
+      // Update view offset based on the delta
+      setViewOffset(prev => ({
+        x: prev.x + deltaX * 0.5, // Adjust sensitivity
+        y: prev.y + deltaY * 0.5
+      }));
+      
+      // Store current positions for next delta calculation
+      target.dataset.prevTouchX = currentMidX.toString();
+      target.dataset.prevTouchY = currentMidY.toString();
+    }
+  };
+  
+  // Enhanced touch end handler with inertia effect
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (viewMode !== 'mobile') return;
+    
+    // Update the touch count
+    setTouchCount(e.touches.length);
+    
+    // Clear any pending long press timer
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    
+    // End panning mode if no more two-finger touch
+    if (e.touches.length < 2) {
+      setIsPanning(false);
+      
+      // Clear previous touch positions
+      const target = e.currentTarget as HTMLElement;
+      if (target.dataset.prevTouchX) {
+        delete target.dataset.prevTouchX;
+        delete target.dataset.prevTouchY;
+      }
+    }
+  };
+  
+  // Handle dragging for tasks in mobile view
+  const handleDragEnd = (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo, taskId: string) => {
+    if (viewMode !== 'mobile' || !selectedTask) return;
+    
+    // Update the task position
+    setTaskPositions(prev => ({
+      ...prev,
+      [taskId]: {
+        x: prev[taskId]?.x + info.offset.x || info.offset.x,
+        y: prev[taskId]?.y + info.offset.y || info.offset.y
+      }
+    }));
+    
+    // Clear selected task after moving
+    setSelectedTask(null);
   };
 
-  // Create a map for looking up tasks by ID
-  const taskMap = tasks.reduce((map, task) => {
-    map.set(task.id, task);
-    return map;
-  }, new Map<string, Task>());
-
-  // Find root tasks (tasks that no other task connects to)
-  const findRootTasks = () => {
-    // Create a set of all task IDs that are connected to by some other task
-    const childTaskIds = new Set<string>();
-    tasks.forEach(task => {
-      task.connections.forEach(connId => {
-        childTaskIds.add(connId);
-      });
+  // Mobile view layout
+  useEffect(() => {
+    if (viewMode !== 'mobile' || !containerRef.current) return;
+    
+    // Get container dimensions
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const containerWidth = containerRect.width || 400;
+    const containerHeight = containerRect.height || 600;
+    
+    // Create a grid layout for mobile
+    const newPositions: {[key: string]: {x: number, y: number}} = {};
+    const columns = containerWidth > 500 ? 2 : 1;
+    const cardWidth = (containerWidth / columns) - 20;
+    const cardHeight = 120;
+    const margin = 10;
+    
+    // Position tasks in a scrollable grid
+    sortedTasks.forEach((task, index) => {
+      const column = index % columns;
+      const row = Math.floor(index / columns);
+      
+      newPositions[task.id] = {
+        x: column * (cardWidth + margin) + margin,
+        y: row * (cardHeight + margin) + margin
+      };
     });
     
-    // Return tasks that aren't in the childTaskIds set
-    return tasks.filter(task => !childTaskIds.has(task.id));
-  };
+    setTaskPositions(newPositions);
+  }, [sortedTasks, viewMode]);
 
-  // Simplified animation for better performance
-  const modalVariants = {
-    hidden: { opacity: 0 },
-    visible: { opacity: 1, transition: { duration: 0.3 } }
-  };
-  
-  // Calculate a reasonable subset of tasks to display to reduce animation load
-  const displayedTasks = sortedTasks.slice(0, 10); // Only show up to 10 tasks
-
-  // After initializing viewMode
-  useEffect(() => {
-    // When we switch to the relationship view, generate some example connections if needed
-    if (viewMode === 'graph' && tasks.some(task => !task.connections)) {
-      // Add connections data to tasks that don't have it
-      // This is only for demonstration purposes
-      const exampleConnections = [
-        { source: 0, targets: [1, 2] },         // First task connects to second and third
-        { source: 1, targets: [3, 4] },         // Second task connects to fourth and fifth
-        { source: 2, targets: [5] },            // Third task connects to sixth
-        { source: 5, targets: [6, 7] },         // Sixth task connects to seventh and eighth
-        { source: 3, targets: [8] }             // Fourth task connects to ninth
-      ];
-      
-      // Add connections to tasks for demonstration
-      console.log("Adding example connections for demonstration");
-    }
-  }, [viewMode, tasks]);
-
-  // Update the useEffect for calculating arrows to handle tasks without connections array
-  useEffect(() => {
-    if (viewMode !== 'graph' || !graphContainerRef.current) return;
-
-    // Wait for layout to complete
-    const timer = setTimeout(() => {
-      const newArrows: Array<{from: string, to: string, path: string}> = [];
-      
-      // For each task, draw connections to its linked tasks
-      tasks.forEach(task => {
-        const sourceElement = taskNodeRefs.current.get(task.id);
-        if (!sourceElement) return;
-
-        const sourceRect = sourceElement.getBoundingClientRect();
-        const containerRect = graphContainerRef.current!.getBoundingClientRect();
-
-        // Calculate source position relative to the container
-        const sourceX = sourceRect.left - containerRect.left + sourceRect.width / 2;
-        const sourceY = sourceRect.top - containerRect.top + sourceRect.height / 2;
-
-        // For each connection, draw an arrow
-        // Handle tasks that might not have connections array
-        const connections = task.connections || [];
-        connections.forEach(targetId => {
-          const targetElement = taskNodeRefs.current.get(targetId);
-          if (!targetElement) return;
-
-          const targetRect = targetElement.getBoundingClientRect();
-          
-          // Calculate target position relative to the container
-          const targetX = targetRect.left - containerRect.left + targetRect.width / 2;
-          const targetY = targetRect.top - containerRect.top + targetRect.height / 2;
-
-          // Calculate control points for curved arrow
-          const dx = targetX - sourceX;
-          const dy = targetY - sourceY;
-          const controlX = sourceX + dx / 2;
-          const controlY = sourceY + dy / 2;
-
-          // Adjust end points to stop at card edges
-          const angle = Math.atan2(dy, dx);
-          const sourceRadius = Math.min(sourceRect.width, sourceRect.height) / 2;
-          const targetRadius = Math.min(targetRect.width, targetRect.height) / 2;
-          
-          const sourceEndX = sourceX + Math.cos(angle) * sourceRadius;
-          const sourceEndY = sourceY + Math.sin(angle) * sourceRadius;
-          const targetEndX = targetX - Math.cos(angle) * targetRadius;
-          const targetEndY = targetY - Math.sin(angle) * targetRadius;
-
-          // Create SVG path
-          const path = `M ${sourceEndX} ${sourceEndY} Q ${controlX} ${controlY} ${targetEndX} ${targetEndY}`;
-          
-          newArrows.push({
-            from: task.id,
-            to: targetId,
-            path
-          });
-        });
-      });
-
-      setArrows(newArrows);
-    }, 100);
-
-    return () => clearTimeout(timer);
-  }, [viewMode, tasks]);
-
-  // Recursive function to render task hierarchy
-  const renderTaskHierarchy = (taskId: string, level: number = 0, visited = new Set<string>()): React.ReactNode => {
-    // Prevent circular references
-    if (visited.has(taskId)) {
-      return <div key={`cycle-${taskId}`} className="text-red-500 text-xs ml-4">Circular reference</div>;
-    }
+  // Render a task node with enhanced mobile support
+  const renderTaskNode = (task: Task, index: number) => {
+    const StatusIcon = statusConfig[task.status]?.icon || FaRegCircle;
+    const statusColor = statusConfig[task.status]?.color || 'text-neutral-500';
+    const priorityColor = priorityColors[task.priority] || 'bg-neutral-500';
     
-    const task = taskMap.get(taskId);
-    if (!task) {
-      return <div key={`missing-${taskId}`} className="text-red-500 text-xs ml-4">Task not found</div>;
-    }
-
-    const newVisited = new Set(visited);
-    newVisited.add(taskId);
+    // Determine appropriate width based on viewport and view mode
+    const getTaskWidth = () => {
+      if (viewMode === 'mobile') {
+        return isMobile ? 'calc(100% - 20px)' : '300px';
+      } else {
+        return '240px';
+      }
+    };
     
-    const getTaskEl = (task: Task, isChild = false) => (
-      <div 
-        key={task.id}
-        ref={el => {
-          if (el) taskNodeRefs.current.set(task.id, el);
-        }}
-        className={`bg-white dark:bg-neutral-800 p-3 rounded-lg border-l-4 shadow-sm mb-3 ${isChild ? 'ml-4' : ''}`}
-        style={{
-          borderLeftColor: getPriorityColor(task.priority),
-          transform: `translateX(${level * 20}px)`
-        }}
-      >
-        <div className="flex justify-between items-center">
-          <h3 className="font-medium text-sm">{task.title}</h3>
-          <span className="text-xs bg-neutral-100 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-400 px-2 py-0.5 rounded">
-            {task.status}
-          </span>
-        </div>
-        <div className="flex justify-between items-center mt-2 text-xs">
-          <span className="text-neutral-500 dark:text-neutral-400">
-            {format(task.dueDate, 'MMM d')}
-          </span>
-          <div className="flex items-center">
-            <div className="h-5 w-5 rounded-full bg-gradient-to-r from-primary-400 to-secondary-400 flex items-center justify-center text-white text-[10px] mr-1">
-              {task.assignee.name[0]}
-            </div>
-            <span className="text-neutral-500 dark:text-neutral-400 max-w-[80px] truncate">
-              {task.assignee.name}
-            </span>
-          </div>
-        </div>
-      </div>
-    );
-
-    if (task.connections.length === 0) {
-      return getTaskEl(task);
-    }
-
+    const nodeStyle = taskPositions[task.id] ? {
+      left: `${taskPositions[task.id].x}px`,
+      top: `${taskPositions[task.id].y}px`,
+      zIndex: selectedTask === task.id ? 20 : (activeTaskMenu === task.id ? 25 : 15),
+      width: getTaskWidth(),
+      maxWidth: viewMode === 'mobile' ? '100%' : '240px',
+    } : {};
+    
     return (
-      <div key={task.id} className="mb-4">
-        {getTaskEl(task)}
-        <div className="pl-4 border-l border-neutral-200 dark:border-neutral-700 ml-4">
-          {task.connections.map(connId => renderTaskHierarchy(connId, level + 1, newVisited))}
-        </div>
-      </div>
-    );
-  };
-  
-  const rootTasks = findRootTasks();
-  
-  return (
-    <div className="focus-mode">
       <motion.div
-        initial="hidden"
-        animate="visible"
-        variants={modalVariants}
-        className="bg-white dark:bg-neutral-900 rounded-xl shadow-2xl w-full max-w-4xl p-8"
-        {...{} as any}
+        key={task.id}
+        className={`absolute bg-white dark:bg-neutral-800 rounded-lg shadow-md border border-neutral-200 dark:border-neutral-700 p-4 ${
+          selectedTask === task.id ? 'ring-2 ring-primary-500' : ''
+        }`}
+        style={nodeStyle}
+        initial={{ opacity: 0, scale: 0.8 }}
+        animate={{ 
+          opacity: 1, 
+          scale: selectedTask === task.id ? 1.05 : 1,
+          x: viewMode === 'mobile' ? viewOffset.x : 0,
+          y: viewMode === 'mobile' ? viewOffset.y : 0
+        }}
+        exit={{ opacity: 0, scale: 0.8 }}
+        transition={{ duration: 0.3 }}
+        drag={viewMode === 'mobile' && selectedTask === task.id}
+        dragControls={dragControls}
+        onDragEnd={(e, info) => handleDragEnd(e, info, task.id)}
+        onTouchStart={(e) => handleTouchStart(e, task.id)}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        dragConstraints={containerRef}
+        dragElastic={0.2}
+        dragMomentum={false}
       >
-        <div className="flex justify-between items-center mb-8">
-          <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary-500 to-secondary-500">
-            {viewMode === 'timeline' ? "Project Timeline" : 
-             viewMode === 'overview' ? "Task Overview" : 
-             "Task Relationships"}
-          </h2>
-          <div className="flex items-center space-x-4">
-            <div className="flex space-x-2 bg-neutral-100 dark:bg-neutral-800 p-1 rounded-lg">
-              <button
-                onClick={() => setViewMode('timeline')}
-                className={`px-3 py-1.5 text-xs rounded-md flex items-center ${
-                  viewMode === 'timeline' 
-                    ? 'bg-white dark:bg-neutral-700 shadow-sm text-primary-600 dark:text-primary-400' 
-                    : 'text-neutral-600 dark:text-neutral-400'
-                }`}
+        {/* Task header with status and menu */}
+        <div className="flex justify-between items-start mb-2">
+          <div className="flex items-center">
+            <StatusIcon className={`mr-2 ${statusColor}`} />
+            <span className="text-sm font-medium">{task.status}</span>
+          </div>
+          <div className="flex items-center">
+            {task.priority && (
+              <div className={`h-3 w-3 rounded-full ${priorityColor} mr-2`} title={`Priority: ${task.priority}`}></div>
+            )}
+            {/* Mobile action menu button */}
+            {viewMode === 'mobile' && (
+              <button 
+                className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 p-1"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveTaskMenu(activeTaskMenu === task.id ? null : task.id);
+                }}
+                aria-label="Task options"
               >
-                <svg className="w-3 h-3 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <line x1="3" y1="12" x2="21" y2="12"></line>
-                  <polyline points="8 8 12 4 16 8"></polyline>
-                  <polyline points="16 16 12 20 8 16"></polyline>
-                </svg>
-                Timeline
+                <BsThreeDots />
               </button>
-              <button
-                onClick={() => setViewMode('overview')}
-                className={`px-3 py-1.5 text-xs rounded-md flex items-center ${
-                  viewMode === 'overview' 
-                    ? 'bg-white dark:bg-neutral-700 shadow-sm text-primary-600 dark:text-primary-400' 
-                    : 'text-neutral-600 dark:text-neutral-400'
-                }`}
-              >
-                <svg className="w-3 h-3 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <rect x="3" y="3" width="18" height="18" rx="2"></rect>
-                  <path d="M3 9h18"></path>
-                  <path d="M9 21V9"></path>
-                </svg>
-                Overview
-              </button>
-              <button
-                onClick={() => setViewMode('graph')}
-                className={`px-3 py-1.5 text-xs rounded-md flex items-center ${
-                  viewMode === 'graph' 
-                    ? 'bg-white dark:bg-neutral-700 shadow-sm text-primary-600 dark:text-primary-400' 
-                    : 'text-neutral-600 dark:text-neutral-400'
-                }`}
-              >
-                <svg className="w-3 h-3 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="18" cy="5" r="3"></circle>
-                  <circle cx="6" cy="12" r="3"></circle>
-                  <circle cx="18" cy="19" r="3"></circle>
-                  <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
-                  <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
-                </svg>
-                Relationships
-              </button>
-            </div>
-            <button 
-              onClick={onClose} 
-              className="p-2 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-full text-2xl w-8 h-8 flex items-center justify-center transition-colors"
-              aria-label="Close timeline"
-            >
-              ×
-            </button>
+            )}
           </div>
         </div>
         
-        {viewMode === 'timeline' && (
-          /* Timeline view */
-          <div className="relative mt-16 mb-16">
-            {/* Timeline track */}
-            <div className="absolute h-1 bg-neutral-200 dark:bg-neutral-700 w-full top-7 rounded-full"></div>
-            
-            {/* Date markers - limit to every other date for less visual noise */}
-            <div className="relative">
-              {dateArray.filter((_, i) => i % 2 === 0 || i === dateArray.length - 1).map((date, index, filteredArray) => (
-                <div 
-                  key={format(date, 'yyyy-MM-dd')}
-                  className="absolute top-0 transform -translate-x-1/2"
-                  style={{ left: `${(index / (filteredArray.length - 1)) * 100}%` }}
-                >
-                  <div className="h-3 w-3 bg-neutral-400 dark:bg-neutral-500 rounded-full mb-2"></div>
-                  <div className="text-xs text-neutral-600 dark:text-neutral-400 font-medium">
-                    {format(date, 'MMM d')}
-                  </div>
-                </div>
-              ))}
-            </div>
-            
-            {/* Tasks - simplified rendering */}
-            <div className="relative pt-16">
-              {displayedTasks.map((task, index) => (
-                <div
-                  key={task.id}
-                  className="absolute transform -translate-x-1/2 transition-opacity duration-300"
-                  style={{ 
-                    left: getTaskPosition(task.dueDate),
-                    top: (index % 3) * 80 + 16, // Stack tasks to avoid overlap
-                    opacity: 1
-                  }}
-                >
-                  <div 
-                    className="w-4 h-16 absolute top-[-16px] left-1/2 transform -translate-x-1/2"
-                    style={{ 
-                      background: `linear-gradient(to bottom, transparent, ${getPriorityColor(task.priority)})` 
-                    }}
-                  ></div>
-                  <div 
-                    className="bg-white dark:bg-neutral-800 p-3 rounded-lg shadow-lg border-t-4 w-48"
-                    style={{ borderTopColor: getPriorityColor(task.priority) }}
-                  >
-                    <h3 className="font-medium text-sm truncate">{task.title}</h3>
-                    <div className="flex justify-between items-center mt-2 text-xs">
-                      <span className="text-neutral-500 dark:text-neutral-400">
-                        {format(task.dueDate, 'MMM d')}
-                      </span>
-                      <div className="h-5 w-5 rounded-full bg-gradient-to-r from-primary-400 to-secondary-400 flex items-center justify-center text-white text-[10px]">
-                        {task.assignee.name[0]}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+        {/* Mobile action menu */}
+        {activeTaskMenu === task.id && viewMode === 'mobile' && (
+          <div className="absolute right-2 top-8 bg-white dark:bg-neutral-700 shadow-lg rounded-md py-1 z-30">
+            <button 
+              className="flex items-center w-full px-4 py-2 text-sm text-left hover:bg-neutral-100 dark:hover:bg-neutral-600"
+              onClick={() => handleTaskAction('edit', task.id)}
+            >
+              <BsPencil className="mr-2" /> Edit
+            </button>
+            <button 
+              className="flex items-center w-full px-4 py-2 text-sm text-left text-red-600 hover:bg-neutral-100 dark:hover:bg-neutral-600"
+              onClick={() => handleTaskAction('delete', task.id)}
+            >
+              <BsTrash className="mr-2" /> Delete
+            </button>
           </div>
         )}
         
+        <h3 className="font-semibold mb-1 line-clamp-2">{task.title}</h3>
+        
+        {task.description && (
+          <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-2 line-clamp-2">
+            {task.description}
+          </p>
+        )}
+        
+        <div className="flex justify-between text-xs text-neutral-500 dark:text-neutral-400 mt-auto">
+          {task.assignee && (
+            <div>
+              <span>{task.assignee.name}</span>
+            </div>
+          )}
+          {task.dueDate && (
+            <div>
+              <span>{formatDate(task.dueDate)}</span>
+            </div>
+          )}
+        </div>
+      </motion.div>
+    );
+  };
+
+  // Render mobile-friendly timeline markers
+  const renderTimeMarkers = () => {
+    if (viewMode !== 'timeline' || sortedTasks.length === 0) return null;
+    
+    // Find earliest and latest dates
+    const taskDates = sortedTasks
+      .filter(task => task.dueDate)
+      .map(task => {
+        if (task.dueDate instanceof Date) {
+          return task.dueDate;
+        } else {
+          try {
+            return parseISO(task.dueDate!);
+          } catch (error) {
+            console.error('Error parsing date:', error);
+            return new Date(); // Fallback to current date
+          }
+        }
+      });
+    
+    if (taskDates.length === 0) return null;
+    
+    // Sort dates
+    taskDates.sort((a, b) => (isAfter(a, b) ? 1 : -1));
+    
+    // Get earliest and latest
+    const earliest = taskDates[0];
+    const latest = taskDates[taskDates.length - 1];
+    
+    // Generate months between earliest and latest
+    const markers = [];
+    let current = earliest;
+    
+    while (isBefore(current, latest) || isEqual(current, latest)) {
+      markers.push(format(current, isMobile ? 'MMM yy' : 'MMMM yyyy')); // Shorter format for mobile
+      current = addMonths(current, 1);
+    }
+    
+    // Render month markers with responsive design
+    return (
+      <div className="absolute top-0 left-0 h-20 flex z-20 overflow-x-auto w-full">
+        {markers.map((marker, index) => (
+          <div 
+            key={marker} 
+            className="flex flex-col items-center px-4 md:px-10 font-medium text-neutral-700 dark:text-neutral-300 flex-shrink-0"
+            style={{ left: `${index * (isMobile ? 120 : 300) + 50}px` }}
+          >
+            <div className="h-8 border-l border-neutral-300 dark:border-neutral-700"></div>
+            <div className="text-xs md:text-sm">{marker}</div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+  
+  // Function to safely format a date
+  const formatDate = (date: Date | string | undefined) => {
+    if (!date) return '';
+    
+    // If it's already a Date object
+    if (date instanceof Date) {
+      return format(date, 'MMM d, yyyy');
+    } 
+    
+    // If it's a string, try to parse it
+    try {
+      return format(parseISO(date), 'MMM d, yyyy');
+    } catch (error) {
+      console.error('Error parsing date:', error);
+      return 'Invalid date';
+    }
+  };
+  
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 20 }}
+      transition={{ duration: 0.3 }}
+      className="fixed inset-0 flex flex-col bg-white dark:bg-neutral-900 z-40"
+    >
+      {/* Responsive header */}
+      <div className="p-3 md:p-6 border-b border-neutral-200 dark:border-neutral-800 flex justify-between items-center">
+        <h2 className="text-lg md:text-2xl font-bold text-neutral-800 dark:text-white truncate">Project Timeline</h2>
+        <button
+          onClick={onClose}
+          className="w-8 h-8 flex items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-500 dark:text-neutral-400"
+          aria-label="Close"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+          </svg>
+        </button>
+      </div>
+      
+      {/* Responsive view mode selector */}
+      <div className="flex justify-center p-2 md:p-4 border-b border-neutral-200 dark:border-neutral-800 z-50 overflow-x-auto">
+        <div className="flex bg-neutral-100 dark:bg-neutral-800 rounded-lg p-1">
+          <button
+            onClick={() => setViewMode('timeline')}
+            className={`flex items-center px-2 md:px-4 py-2 rounded-md whitespace-nowrap ${
+              viewMode === 'timeline' 
+                ? 'bg-white dark:bg-neutral-700 shadow-sm text-primary-600 dark:text-primary-400' 
+                : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200'
+            }`}
+          >
+            <BsCalendar3 className="mr-1 md:mr-2" />
+            <span className="text-sm md:text-base">Timeline</span>
+          </button>
+          <button
+            onClick={() => setViewMode('overview')}
+            className={`flex items-center px-2 md:px-4 py-2 rounded-md whitespace-nowrap ${
+              viewMode === 'overview' 
+                ? 'bg-white dark:bg-neutral-700 shadow-sm text-primary-600 dark:text-primary-400' 
+                : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200'
+            }`}
+          >
+            <BsCardList className="mr-1 md:mr-2" />
+            <span className="text-sm md:text-base">Overview</span>
+          </button>
+          <button
+            onClick={() => setViewMode('mobile')}
+            className={`flex items-center px-2 md:px-4 py-2 rounded-md whitespace-nowrap ${
+              viewMode === 'mobile' 
+                ? 'bg-white dark:bg-neutral-700 shadow-sm text-primary-600 dark:text-primary-400' 
+                : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200'
+            }`}
+          >
+            <BsPhone className="mr-1 md:mr-2" />
+            <span className="text-sm md:text-base">Mobile</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Mobile view instructions - only show when in mobile view */}
+      {viewMode === 'mobile' && (
+        <div className="p-2 bg-blue-50 dark:bg-blue-900/20 text-xs text-blue-700 dark:text-blue-300 border-b border-blue-100 dark:border-blue-800">
+          <ul className="list-disc pl-5">
+            <li>Long press (2 seconds) on a task to select and move it</li>
+            <li>Use two fingers to pan around the dashboard</li>
+            <li>Tap the three dots to access task options</li>
+          </ul>
+        </div>
+      )}
+
+      {/* Main content area */}
+      <div 
+        ref={containerRef}
+        className="relative flex-1 overflow-auto p-2 md:p-4"
+      >
+        {/* Render different views based on viewMode */}
+        {viewMode === 'timeline' && (
+          <>
+            {renderTimeMarkers()}
+            <div className="relative mt-20">
+              <AnimatePresence>
+                {sortedTasks.map((task, index) => renderTaskNode(task, index))}
+              </AnimatePresence>
+            </div>
+          </>
+        )}
+
         {viewMode === 'overview' && (
-          /* Overview mode */
-          <div className="grid grid-cols-3 gap-4">
-            {Object.entries(tasksByStatus).map(([status, statusTasks]) => (
-              <div key={status} className="bg-neutral-50 dark:bg-neutral-800 rounded-lg p-4">
-                <h3 className="font-medium text-sm mb-3 text-center py-2 rounded-md" style={{
-                  backgroundColor: status === 'To Do' ? '#f1f5f9' : status === 'In Progress' ? '#e0f2fe' : '#dcfce7',
-                  color: status === 'To Do' ? '#475569' : status === 'In Progress' ? '#0369a1' : '#16a34a'
-                }}>
-                  {status} ({statusTasks.length})
-                </h3>
-                
-                <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
-                  {statusTasks.map(task => (
-                    <div 
-                      key={task.id}
-                      className="bg-white dark:bg-neutral-700 p-3 rounded-md shadow-sm border-l-4 text-sm"
-                      style={{ borderLeftColor: getPriorityColor(task.priority) }}
-                    >
-                      <h4 className="font-medium truncate mb-2">{task.title}</h4>
-                      <div className="flex justify-between items-center">
-                        <div className="flex items-center">
-                          <svg className="w-3 h-3 mr-1 text-neutral-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <path d="M12 6v6l4 2"></path>
-                          </svg>
-                          <span className="text-xs font-bold">{format(task.dueDate, 'MMM d')}</span>
-                        </div>
-                        <div className="flex items-center">
-                          <div className="h-5 w-5 rounded-full bg-gradient-to-r from-primary-400 to-secondary-400 flex items-center justify-center text-white text-[10px]">
-                            {task.assignee.name[0]}
-                          </div>
-                          <span className="text-xs ml-1 text-neutral-500 dark:text-neutral-400 max-w-[60px] truncate">{task.assignee.name}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  {statusTasks.length === 0 && (
-                    <div className="text-center text-neutral-500 dark:text-neutral-400 text-xs py-4">
-                      No tasks in this status
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+            {Object.entries(getTasksByStatus()).map(([status, tasks]) => (
+              <div key={status} className="bg-neutral-50 dark:bg-neutral-800 rounded-lg p-3 md:p-4">
+                <div className="flex items-center mb-3 md:mb-4">
+                  {statusConfig[status as keyof typeof statusConfig] && (
+                    <div className={`mr-2 ${statusConfig[status as keyof typeof statusConfig].color}`}>
+                      {React.createElement(statusConfig[status as keyof typeof statusConfig].icon)}
                     </div>
                   )}
+                  <h3 className="font-semibold text-sm md:text-base">{status}</h3>
+                  <span className="ml-2 bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-400 text-xs px-2 py-1 rounded-full">
+                    {tasks.length}
+                  </span>
+                </div>
+                <div className="space-y-2 md:space-y-3 max-h-[calc(100vh-200px)] overflow-y-auto">
+                  {tasks.map(task => (
+                    <div 
+                      key={task.id} 
+                      className="bg-white dark:bg-neutral-750 p-2 md:p-3 rounded-md shadow-sm border border-neutral-200 dark:border-neutral-700"
+                      onClick={() => isMobile && setActiveTaskMenu(activeTaskMenu === task.id ? null : task.id)}
+                    >
+                      <div className="flex justify-between items-center mb-1">
+                        <h4 className="font-medium text-sm line-clamp-1">{task.title}</h4>
+                        {isMobile && (
+                          <button 
+                            className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 p-1"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveTaskMenu(activeTaskMenu === task.id ? null : task.id);
+                            }}
+                          >
+                            <BsThreeDots size={14} />
+                          </button>
+                        )}
+                      </div>
+                      {task.dueDate && (
+                        <div className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                          {formatDate(task.dueDate)}
+                        </div>
+                      )}
+                      
+                      {/* Mobile action menu for overview mode */}
+                      {activeTaskMenu === task.id && isMobile && (
+                        <div className="mt-2 pt-2 border-t border-neutral-100 dark:border-neutral-700 flex justify-around">
+                          <button 
+                            className="flex items-center px-2 py-1 text-xs text-neutral-600 dark:text-neutral-400"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleTaskAction('edit', task.id);
+                            }}
+                          >
+                            <BsPencil className="mr-1" /> Edit
+                          </button>
+                          <button 
+                            className="flex items-center px-2 py-1 text-xs text-red-600"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleTaskAction('delete', task.id);
+                            }}
+                          >
+                            <BsTrash className="mr-1" /> Delete
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
             ))}
           </div>
         )}
 
-        {viewMode === 'graph' && (
-          /* Graph view showing task relationships */
+        {viewMode === 'mobile' && (
           <div 
-            ref={graphContainerRef}
-            className="relative bg-neutral-50 dark:bg-neutral-800 rounded-lg p-6 min-h-[400px] max-h-[500px] overflow-auto"
+            className="relative min-h-[800px]"
+            style={{ 
+              touchAction: isPanning ? 'none' : 'auto' // Disable browser touch actions when panning
+            }}
           >
-            {/* Render task relationships with arrows */}
-            <div className="relative">
-              {/* SVG overlay for arrows */}
-              <svg className="absolute top-0 left-0 w-full h-full pointer-events-none" style={{ zIndex: 1 }}>
-                {arrows.map((arrow, index) => (
-                  <g key={`arrow-${index}`}>
-                    <path
-                      d={arrow.path}
-                      fill="none"
-                      stroke="rgba(99, 102, 241, 0.6)"
-                      strokeWidth="2"
-                      strokeDasharray="4 2"
-                      markerEnd="url(#arrowhead)"
-                    />
-                  </g>
-                ))}
-                {/* Arrow marker definition */}
-                <defs>
-                  <marker
-                    id="arrowhead"
-                    markerWidth="6"
-                    markerHeight="6"
-                    refX="5"
-                    refY="3"
-                    orient="auto"
-                  >
-                    <path d="M0,0 L0,6 L6,3 Z" fill="rgba(99, 102, 241, 0.8)" />
-                  </marker>
-                </defs>
-              </svg>
-
-              {/* Task hierarchy cards */}
-              <div className="space-y-6 relative z-10">
-                {rootTasks.length > 0 ? (
-                  rootTasks.map(task => renderTaskHierarchy(task.id))
-                ) : (
-                  <div className="text-center text-neutral-500 dark:text-neutral-400 py-8">
-                    No clear task hierarchy found. Try connecting tasks through the task editor.
-                  </div>
-                )}
+            <AnimatePresence>
+              {sortedTasks.map((task, index) => renderTaskNode(task, index))}
+            </AnimatePresence>
+            
+            {/* Mobile touch indicators */}
+            {touchCount > 0 && (
+              <div className="fixed bottom-4 right-4 bg-black/70 text-white px-3 py-1 rounded-full text-xs">
+                {touchCount} finger{touchCount !== 1 ? 's' : ''} {selectedTask ? '• Task selected' : ''}
               </div>
-            </div>
-
-            {/* Legend */}
-            <div className="mt-6 border-t border-neutral-200 dark:border-neutral-700 pt-4 text-xs text-neutral-500 dark:text-neutral-400">
-              <div className="flex items-center space-x-4">
-                <div className="flex items-center">
-                  <div className="w-3 h-0 border-t-2 border-dashed border-indigo-400 mr-1"></div>
-                  <span>Task connection/dependency</span>
-                </div>
-                <div className="flex items-center">
-                  <div className="w-2 h-2 rounded-full bg-red-500 mr-1"></div>
-                  <span>High priority</span>
-                </div>
-                <div className="flex items-center">
-                  <div className="w-2 h-2 rounded-full bg-yellow-500 mr-1"></div>
-                  <span>Medium priority</span>
-                </div>
-                <div className="flex items-center">
-                  <div className="w-2 h-2 rounded-full bg-green-500 mr-1"></div>
-                  <span>Low priority</span>
-                </div>
-              </div>
-            </div>
+            )}
           </div>
         )}
-      </motion.div>
-    </div>
+      </div>
+    </motion.div>
   );
-} 
+};
+
+export default Timeline;

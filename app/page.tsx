@@ -1,24 +1,15 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import dynamic from 'next/dynamic';
 import { motion } from 'framer-motion';
 import Workspace, { WorkspaceHandle } from '../components/Workspace';
 import Sidebar from '../components/Sidebar';
 import Header from '../components/Header';
 
-// Dynamically import the Three.js components to avoid SSR issues
-// Only load ProjectPulse when needed to reduce initial load
-const ProjectPulse = dynamic(() => import('../components/ProjectPulse'), { 
-  ssr: false,
-  loading: () => <div className="w-64 h-64 rounded-full bg-neutral-100 dark:bg-neutral-800 opacity-30"></div>
-});
-
 export default function Home() {
   const [showFocusMode, setShowFocusMode] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
-  const [showProjectPulse, setShowProjectPulse] = useState(false);
   const [projectCounts, setProjectCounts] = useState<Record<string, number>>({
     'Design System': 0,
     'Mobile App': 0,
@@ -95,16 +86,6 @@ export default function Home() {
   const handleCloseAnalytics = useCallback(() => {
     setShowAnalytics(false);
   }, []);
-
-  // Load project pulse after initial render
-  useEffect(() => {
-    // Delay loading the ProjectPulse to improve initial performance
-    const timer = setTimeout(() => {
-      setShowProjectPulse(true);
-    }, 2000);
-    
-    return () => clearTimeout(timer);
-  }, []);
   
   return (
     <main className="flex min-h-screen flex-col">
@@ -136,15 +117,6 @@ export default function Home() {
             onToggleAnalytics={handleCloseAnalytics}
             activeCategory={activeCategory}
           />
-          
-          {/* Project Pulse Visualization - Hide when Analytics is open */}
-          {showProjectPulse && !showAnalytics && (
-            <div 
-              className="absolute bottom-4 right-4 w-64 h-64"
-            >
-              <ProjectPulse />
-            </div>
-          )}
         </div>
       </div>
     </main>

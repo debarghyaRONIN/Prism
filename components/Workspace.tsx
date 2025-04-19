@@ -9,6 +9,7 @@ import Timeline from '../components/Timeline';
 import Analytics from '../components/Analytics';
 import TaskDetailView from './TaskDetailView';
 import TaskDialog from './TaskDialog';
+import NavigationHelp from './NavigationHelp';
 
 // Define the Task interface
 interface Position {
@@ -43,7 +44,7 @@ const initialTasks = [
     description: 'Create reusable UI components for the design system',
     status: 'In Progress',
     priority: 'high',
-    dueDate: new Date(Date.now() + 86400000 * 3), // 3 days from now
+    dueDate: new Date('2025-01-03'), // Static date instead of Date.now()
     assignee: { name: 'Alice', avatar: '' },
     type: 'design',
     position: { x: 100, y: 100 },
@@ -56,7 +57,7 @@ const initialTasks = [
     description: 'Implement login, registration, and password reset',
     status: 'To Do',
     priority: 'urgent',
-    dueDate: new Date(Date.now() + 86400000 * 1), // 1 day from now
+    dueDate: new Date('2025-01-01'), // Static date
     assignee: { name: 'Bob', avatar: '' },
     type: 'auth',
     position: { x: 800, y: 100 },
@@ -69,7 +70,7 @@ const initialTasks = [
     description: 'Connect frontend with backend services',
     status: 'To Do',
     priority: 'medium',
-    dueDate: new Date(Date.now() + 86400000 * 5), // 5 days from now
+    dueDate: new Date('2025-01-05'), // Static date
     assignee: { name: 'Charlie', avatar: '' },
     type: 'api',
     position: { x: 800, y: 900 },
@@ -82,7 +83,7 @@ const initialTasks = [
     description: 'Conduct interviews with potential users',
     status: 'Done',
     priority: 'low',
-    dueDate: new Date(Date.now() - 86400000 * 1), // 1 day ago
+    dueDate: new Date('2024-12-29'), // Static date
     assignee: { name: 'Diana', avatar: '' },
     type: 'research',
     position: { x: 100, y: 900 },
@@ -95,7 +96,7 @@ const initialTasks = [
     description: 'Research competitors and identify market gaps',
     status: 'Done',
     priority: 'low',
-    dueDate: new Date(Date.now() - 86400000 * 2), // 2 days ago
+    dueDate: new Date('2024-12-28'), // Static date
     assignee: { name: 'Eva', avatar: '' },
     type: 'research',
     position: { x: 400, y: 900 },
@@ -108,7 +109,7 @@ const initialTasks = [
     description: 'Define brand color palette and accessibility guidelines',
     status: 'In Progress',
     priority: 'medium',
-    dueDate: new Date(Date.now() + 86400000 * 2), // 2 days from now
+    dueDate: new Date('2025-01-02'), // Static date
     assignee: { name: 'Alice', avatar: '' },
     type: 'color',
     position: { x: 400, y: 100 },
@@ -121,7 +122,7 @@ const initialTasks = [
     description: 'Implement push notification service for mobile users',
     status: 'To Do',
     priority: 'high',
-    dueDate: new Date(Date.now() + 86400000 * 4), // 4 days from now
+    dueDate: new Date('2025-01-04'), // Static date
     assignee: { name: 'Bob', avatar: '' },
     type: 'api',
     position: { x: 1100, y: 100 },
@@ -134,7 +135,7 @@ const initialTasks = [
     description: 'Design and document the database schema for the API',
     status: 'In Progress',
     priority: 'high',
-    dueDate: new Date(Date.now() + 86400000 * 2), // 2 days from now
+    dueDate: new Date('2025-01-02'), // Static date
     assignee: { name: 'Charlie', avatar: '' },
     type: 'database',
     position: { x: 1100, y: 900 },
@@ -147,7 +148,7 @@ const initialTasks = [
     description: 'Create typography scale and usage guidelines',
     status: 'To Do',
     priority: 'medium',
-    dueDate: new Date(Date.now() + 86400000 * 3),
+    dueDate: new Date('2025-01-03'), // Static date
     assignee: { name: 'Alice', avatar: '' },
     type: 'typography',
     position: { x: 100, y: 300 },
@@ -160,7 +161,7 @@ const initialTasks = [
     description: 'Design and implement form input components',
     status: 'In Progress',
     priority: 'high',
-    dueDate: new Date(Date.now() + 86400000 * 5),
+    dueDate: new Date('2025-01-05'), // Static date
     assignee: { name: 'Diana', avatar: '' },
     type: 'design',
     position: { x: 400, y: 300 },
@@ -173,7 +174,7 @@ const initialTasks = [
     description: 'Review components for accessibility compliance',
     status: 'To Do',
     priority: 'urgent',
-    dueDate: new Date(Date.now() + 86400000 * 2),
+    dueDate: new Date('2025-01-02'), // Static date
     assignee: { name: 'Eva', avatar: '' },
     type: 'design',
     position: { x: 100, y: 500 },
@@ -186,7 +187,7 @@ const initialTasks = [
     description: 'Create and categorize icon set for the design system',
     status: 'In Progress',
     priority: 'medium',
-    dueDate: new Date(Date.now() + 86400000 * 6),
+    dueDate: new Date('2025-01-06'), // Static date
     assignee: { name: 'Alice', avatar: '' },
     type: 'design',
     position: { x: 400, y: 500 },
@@ -199,7 +200,7 @@ const initialTasks = [
     description: 'Design and implement user onboarding experience',
     status: 'To Do',
     priority: 'high',
-    dueDate: new Date(Date.now() + 86400000 * 7),
+    dueDate: new Date('2025-01-07'), // Static date
     assignee: { name: 'Bob', avatar: '' },
     type: 'ui',
     position: { x: 800, y: 300 },
@@ -208,50 +209,50 @@ const initialTasks = [
   },
   {
     id: 't14',
-    title: 'Profile Settings Screen',
-    description: 'Create user profile and settings screen',
-    status: 'In Progress',
+    title: 'Gesture Controls',
+    description: 'Implement intuitive gesture controls for mobile',
+    status: 'To Do',
     priority: 'medium',
-    dueDate: new Date(Date.now() + 86400000 * 4),
+    dueDate: new Date('2025-01-08'), // Static date
     assignee: { name: 'Charlie', avatar: '' },
-    type: 'ui',
+    type: 'ux',
     position: { x: 1100, y: 300 },
-    connections: ['t2', 't13', 't25'],
+    connections: ['t13', 't15', 't16'],
     project: 'Mobile App'
   },
   {
     id: 't15',
-    title: 'Social Login Integration',
-    description: 'Implement Google and Facebook login options',
+    title: 'Offline Mode',
+    description: 'Implement offline functionality with data sync',
     status: 'To Do',
     priority: 'high',
-    dueDate: new Date(Date.now() + 86400000 * 3),
+    dueDate: new Date('2025-01-05'), // Static date
     assignee: { name: 'Diana', avatar: '' },
-    type: 'auth',
+    type: 'feature',
     position: { x: 800, y: 500 },
-    connections: ['t2', 't13'],
+    connections: ['t2', 't13', 't14'],
     project: 'Mobile App'
   },
   {
     id: 't16',
-    title: 'Offline Mode',
-    description: 'Implement data caching for offline usage',
-    status: 'Done',
+    title: 'Performance Optimization',
+    description: 'Optimize app performance on low-end devices',
+    status: 'To Do',
     priority: 'medium',
-    dueDate: new Date(Date.now() - 86400000 * 1),
+    dueDate: new Date('2025-01-06'), // Static date
     assignee: { name: 'Eva', avatar: '' },
-    type: 'development',
+    type: 'optimization',
     position: { x: 1100, y: 500 },
-    connections: ['t2', 't7', 't25'],
+    connections: ['t2', 't7', 't14'],
     project: 'Mobile App'
   },
   {
     id: 't17',
     title: 'SEO Optimization',
-    description: 'Optimize website metadata and content for search engines',
+    description: 'Optimize website content for search engines',
     status: 'In Progress',
     priority: 'high',
-    dueDate: new Date(Date.now() + 86400000 * 2),
+    dueDate: new Date('2025-01-03'), // Static date
     assignee: { name: 'Alice', avatar: '' },
     type: 'seo',
     position: { x: 100, y: 1100 },
@@ -260,15 +261,15 @@ const initialTasks = [
   },
   {
     id: 't18',
-    title: 'Landing Page Copy',
-    description: 'Write and review copy for the main landing page',
-    status: 'To Do',
+    title: 'Content Creation',
+    description: 'Develop compelling content for the marketing website',
+    status: 'In Progress',
     priority: 'medium',
-    dueDate: new Date(Date.now() + 86400000 * 4),
+    dueDate: new Date('2025-01-04'), // Static date
     assignee: { name: 'Bob', avatar: '' },
     type: 'content',
     position: { x: 400, y: 1100 },
-    connections: ['t4', 't17', 't20', 't27'],
+    connections: ['t4', 't17', 't20'],
     project: 'Marketing Website'
   },
   {
@@ -277,7 +278,7 @@ const initialTasks = [
     description: 'Create case studies highlighting customer success stories',
     status: 'In Progress',
     priority: 'low',
-    dueDate: new Date(Date.now() + 86400000 * 10),
+    dueDate: new Date('2025-01-10'), // Static date
     assignee: { name: 'Charlie', avatar: '' },
     type: 'content',
     position: { x: 100, y: 1300 },
@@ -290,7 +291,7 @@ const initialTasks = [
     description: 'Collect and format customer testimonials',
     status: 'Done',
     priority: 'low',
-    dueDate: new Date(Date.now() - 86400000 * 3),
+    dueDate: new Date('2024-12-27'), // Static date
     assignee: { name: 'Diana', avatar: '' },
     type: 'content',
     position: { x: 400, y: 1300 },
@@ -303,7 +304,7 @@ const initialTasks = [
     description: 'Implement JWT authentication middleware',
     status: 'In Progress',
     priority: 'urgent',
-    dueDate: new Date(Date.now() + 86400000 * 1),
+    dueDate: new Date('2025-01-01'), // Static date
     assignee: { name: 'Eva', avatar: '' },
     type: 'security',
     position: { x: 800, y: 1100 },
@@ -316,7 +317,7 @@ const initialTasks = [
     description: 'Implement rate limiting for API endpoints',
     status: 'To Do',
     priority: 'medium',
-    dueDate: new Date(Date.now() + 86400000 * 5),
+    dueDate: new Date('2025-01-05'), // Static date
     assignee: { name: 'Alice', avatar: '' },
     type: 'security',
     position: { x: 1100, y: 1100 },
@@ -329,7 +330,7 @@ const initialTasks = [
     description: 'Create CRUD endpoints for user management',
     status: 'In Progress',
     priority: 'high',
-    dueDate: new Date(Date.now() + 86400000 * 3),
+    dueDate: new Date('2025-01-03'), // Static date
     assignee: { name: 'Bob', avatar: '' },
     type: 'endpoints',
     position: { x: 800, y: 1300 },
@@ -825,22 +826,25 @@ const Workspace = forwardRef<WorkspaceHandle, WorkspaceProps>(
           )
         );
       } else {
-        // Create new task with random position if not provided
+        // Create new task with default position that will be updated client-side
         const newPos = taskData.position || {
-          x: 100 + Math.random() * 800,
-          y: 100 + Math.random() * 500
+          x: 100,
+          y: 100
         };
         
         // Ensure the project is set - use the active project if not specified
         const project = taskData.project || activeProject;
         
+        // Use a deterministic ID pattern instead of Date.now()
+        const newId = `t-${Math.floor(1000000 + Math.random() * 9000000)}`;
+        
         const newTask: Task = {
-          id: `t${Date.now()}`,
+          id: newId,
           title: taskData.title || 'New Task',
           description: taskData.description || '',
           status: taskData.status || 'To Do',
           priority: taskData.priority || 'medium',
-          dueDate: taskData.dueDate || new Date(Date.now() + 86400000 * 3), // 3 days from now
+          dueDate: taskData.dueDate || new Date(), // Use current date as default
           assignee: taskData.assignee || { name: 'Unassigned', avatar: '' },
           type: taskData.type || 'design',
           position: newPos,
@@ -848,7 +852,32 @@ const Workspace = forwardRef<WorkspaceHandle, WorkspaceProps>(
           project: project
         };
         
-        setTasks(prevTasks => [...prevTasks, newTask]);
+        // Add task to the list
+        setTasks(prevTasks => {
+          const task = { ...newTask };
+          
+          // Update position client-side only
+          if (!taskData.position) {
+            // Apply random position on next render cycle to avoid hydration mismatch
+            setTimeout(() => {
+              setTasks(currentTasks => 
+                currentTasks.map(t => 
+                  t.id === task.id 
+                    ? { 
+                        ...t, 
+                        position: {
+                          x: 100 + Math.random() * 800,
+                          y: 100 + Math.random() * 500
+                        }
+                      } 
+                    : t
+                )
+              );
+            }, 0);
+          }
+          
+          return [...prevTasks, task];
+        });
       }
       
       // Close the dialog
@@ -1039,7 +1068,7 @@ const Workspace = forwardRef<WorkspaceHandle, WorkspaceProps>(
       return () => {
         document.removeEventListener('mousedown', handleGlobalMouseDown);
       };
-    }, [isPanning]);
+    }, [isPanning, tasks]);
     
     // Show middle-click hint when hovering over task cards for too long
     useEffect(() => {
@@ -1261,7 +1290,7 @@ const Workspace = forwardRef<WorkspaceHandle, WorkspaceProps>(
         {/* New Task Button - Simplified animation */}
         <MotionButton
           {...{
-            className: "absolute bottom-4 left-4 btn-primary flex items-center",
+            className: "absolute bottom-4 left-4 btn-primary flex items-center z-30",
             whileHover: { opacity: 0.9 },
             whileTap: { opacity: 0.8 },
             onClick: () => {
@@ -1292,7 +1321,7 @@ const Workspace = forwardRef<WorkspaceHandle, WorkspaceProps>(
         {(panOffset.x !== 0 || panOffset.y !== 0 || zoomScale !== 1) && (
           <MotionButton
             {...{
-              className: "absolute bottom-4 left-40 btn-secondary flex items-center",
+              className: "absolute bottom-4 left-40 btn-secondary flex items-center z-30",
               whileHover: { opacity: 0.9 },
               whileTap: { opacity: 0.8 },
               onClick: handleResetZoom,
@@ -1318,7 +1347,7 @@ const Workspace = forwardRef<WorkspaceHandle, WorkspaceProps>(
         )}
         
         {/* Zoom Controls */}
-        <div className="absolute bottom-4 right-4 flex space-x-2 z-20">
+        <div className="absolute bottom-4 right-4 flex space-x-2 z-30">
           <MotionButton
             {...{
               className: "btn-secondary flex items-center justify-center w-10 h-10 rounded-full",
@@ -1407,46 +1436,7 @@ const Workspace = forwardRef<WorkspaceHandle, WorkspaceProps>(
         
         {/* Navigation help panel */}
         {showNavHelp && (
-          <div className="absolute bottom-20 right-4 bg-white dark:bg-neutral-800 p-4 rounded-lg shadow-lg z-20 w-72 border border-neutral-300 dark:border-neutral-700">
-            <div className="flex justify-between items-center mb-2">
-              <h3 className="font-bold">Navigation Controls</h3>
-              <button 
-                onClick={() => setShowNavHelp(false)}
-                className="text-neutral-500 hover:text-neutral-700"
-              >
-                ×
-              </button>
-            </div>
-            <div className="space-y-3 text-sm">
-              <div>
-                <div className="font-semibold">Pan the workspace:</div>
-                <div className="text-neutral-600 dark:text-neutral-400">Click and drag on empty space</div>
-              </div>
-              <div>
-                <div className="font-semibold">Zoom in/out:</div>
-                <div className="text-neutral-600 dark:text-neutral-400">
-                  <div>• Use the + / - buttons</div>
-                  <div>• Ctrl/Cmd + +/- keyboard shortcuts</div>
-                </div>
-              </div>
-              <div>
-                <div className="font-semibold">Reset view:</div>
-                <div className="text-neutral-600 dark:text-neutral-400">
-                  <div>• Click "Reset View" button</div>
-                  <div>• Double-click zoom percentage</div>
-                  <div>• Ctrl/Cmd + 0 keyboard shortcut</div>
-                </div>
-              </div>
-              <div>
-                <div className="font-semibold">Mini-Map Navigation:</div>
-                <div className="text-neutral-600 dark:text-neutral-400">
-                  <div>• Appears when zoomed below 25%</div>
-                  <div>• Click anywhere to navigate there</div>
-                  <div>• Click a task dot to select and center it</div>
-                </div>
-              </div>
-            </div>
-          </div>
+          <NavigationHelp onClose={() => setShowNavHelp(false)} />
         )}
         
         {/* Focus Mode */}

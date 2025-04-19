@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { format } from 'date-fns';
 
@@ -74,8 +74,16 @@ export default function TaskDialog({
   // State for categories from all projects
   const [projectCategories, setProjectCategories] = useState<ProjectCategoriesMap>(initialProjectCategories);
   
-  // Default values for a new task
-  const defaultTask: Partial<Task> = {
+  // Available projects
+  const projects = useMemo(() => [
+    { id: '1', name: 'Design System', color: 'from-primary-400 to-primary-600' },
+    { id: '2', name: 'Mobile App', color: 'from-secondary-400 to-secondary-600' },
+    { id: '3', name: 'Marketing Website', color: 'from-success-400 to-success-600' },
+    { id: '4', name: 'Backend API', color: 'from-warning-400 to-warning-600' },
+  ], []);
+
+  // Default values for a new task - memoize to prevent recreation on each render
+  const defaultTask = useMemo(() => ({
     title: '',
     description: '',
     status: 'To Do',
@@ -85,13 +93,19 @@ export default function TaskDialog({
     type: 'design',
     connections: [],
     project: initialProject || 'Design System'
-  };
+  }), [initialProject]);
 
   // State for form values
   const [task, setTask] = useState<Partial<Task>>(defaultTask);
   const [showConnectionsList, setShowConnectionsList] = useState(false);
   const [availableCategories, setAvailableCategories] = useState<Category[]>([]);
   
+  // Get project ID by name - memoize with useCallback
+  const getProjectIdByName = useCallback((projectName: string): string => {
+    const project = projects.find(p => p.name === projectName);
+    return project ? project.id : '1';
+  }, [projects]);
+
   // Listen for category updates from Sidebar
   useEffect(() => {
     const handleCategoryUpdate = (event: CustomEvent) => {
@@ -111,17 +125,21 @@ export default function TaskDialog({
     };
   }, [projectCategories]);
 
-  // Set initial values when dialog opens or edit task changes
+  // Set up task data when dialog is opened
   useEffect(() => {
-    if (editTask) {
-      setTask(editTask);
-    } else {
-      setTask({
-        ...defaultTask,
-        project: initialProject || defaultTask.project
-      });
+    if (isOpen) {
+      if (editTask) {
+        // Edit existing task
+        setTask(editTask);
+      } else {
+        // Create new task
+        setTask({
+          ...defaultTask,
+          project: initialProject || defaultTask.project
+        });
+      }
     }
-  }, [isOpen, editTask, initialProject]);
+  }, [isOpen, editTask, initialProject, defaultTask]);
 
   // Record creation time
   const creationTime = new Date();
@@ -135,20 +153,6 @@ export default function TaskDialog({
     { name: 'Diana', avatar: '' },
     { name: 'Eva', avatar: '' }
   ];
-
-  // Available projects
-  const projects = [
-    { id: '1', name: 'Design System', color: 'from-primary-400 to-primary-600' },
-    { id: '2', name: 'Mobile App', color: 'from-secondary-400 to-secondary-600' },
-    { id: '3', name: 'Marketing Website', color: 'from-success-400 to-success-600' },
-    { id: '4', name: 'Backend API', color: 'from-warning-400 to-warning-600' },
-  ];
-
-  // Get project ID by name
-  const getProjectIdByName = (projectName: string): string => {
-    const project = projects.find(p => p.name === projectName);
-    return project ? project.id : '1';
-  };
 
   // Update categories when project changes or projectCategories is updated
   useEffect(() => {
@@ -168,7 +172,7 @@ export default function TaskDialog({
         }
       }
     }
-  }, [task.project, projectCategories, task.type, availableCategories]);
+  }, [task.project, projectCategories, task.type, availableCategories, getProjectIdByName]);
 
   // Handle field changes
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {

@@ -37,6 +37,10 @@ interface TaskCardProps {
 // Generate a random position within the viewport
 const getRandomPosition = (): Position => {
   // Get viewport dimensions with some padding
+  if (typeof window === 'undefined') {
+    return { x: 100, y: 100 }; // Default for server-side rendering
+  }
+  
   const padding = 100;
   const maxX = Math.max(window.innerWidth - 360, padding); // account for card width
   const maxY = Math.max(window.innerHeight - 280, padding); // account for card height
@@ -55,15 +59,31 @@ export default function TaskCard({
   onMove,
   initialPosition
 }: TaskCardProps) {
-  // Generate random position if not provided
+  // Use a default position for initial render to prevent hydration errors
   const [position, setPosition] = useState<Position>(
-    initialPosition || getRandomPosition()
+    initialPosition || { x: 100, y: 100 }
   );
   
   const [isHovered, setIsHovered] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState<Position>({ x: 0, y: 0 });
+  const [rotation, setRotation] = useState(0);
+  const [zIndex, setZIndex] = useState(1);
   const cardRef = useRef<HTMLDivElement>(null);
+  
+  // Use useEffect to generate random positions and rotations on client-side only
+  useEffect(() => {
+    if (!initialPosition) {
+      setPosition(getRandomPosition());
+    }
+    
+    // Generate a random rotation for the card (-3 to +3 degrees)
+    const seed = task.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    setRotation((seed % 7) - 3); // Range from -3 to +3 degrees
+    
+    // Set random z-index but keep lower than UI controls
+    setZIndex(Math.floor(Math.random() * 5) + 1); // Lower range (1-5) to stay below controls
+  }, [task.id, initialPosition]);
   
   // Get priority color
   const getPriorityColor = (priority: string) => {
@@ -180,19 +200,10 @@ export default function TaskCard({
     };
   }, [isDragging, handleMouseMove, handleMouseUp]);
 
-  // Generate a random rotation for the card (-3 to +3 degrees)
-  const getRandomRotation = () => {
-    // Use task id to ensure consistent rotation for the same card
-    const seed = task.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    return (seed % 7) - 3; // Range from -3 to +3 degrees
-  };
-
-  const rotation = getRandomRotation();
-
   return (
     <div
       ref={cardRef}
-      className={`absolute bg-white dark:bg-neutral-800 rounded-lg shadow-md border-2 border-neutral-200 dark:border-neutral-700 p-4 cursor-pointer transition-all hover:shadow-lg overflow-hidden flex flex-col ${isDragging ? 'shadow-xl ring-2 ring-primary-500 z-50' : 'shadow-lg'}`}
+      className={`absolute bg-white dark:bg-neutral-800 rounded-lg shadow-md border-2 border-neutral-200 dark:border-neutral-700 p-4 cursor-pointer transition-all hover:shadow-lg overflow-hidden flex flex-col ${isDragging ? 'shadow-xl ring-2 ring-primary-500 z-20' : 'shadow-lg'}`}
       onClick={isDragging ? undefined : onClick}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
@@ -210,7 +221,7 @@ export default function TaskCard({
         touchAction: 'none',
         transform: isDragging ? 'rotate(0deg)' : `rotate(${rotation}deg)`,
         transition: isDragging ? 'none' : 'box-shadow 0.2s ease, transform 0.3s ease',
-        zIndex: isDragging ? 1000 : Math.floor(Math.random() * 10) + 1
+        zIndex: isDragging ? 20 : zIndex
       }}
     >
       {/* Card header with task type and project */}
