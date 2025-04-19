@@ -1,0 +1,3 @@
+@echo off
+echo Starting Prism app...
+powershell -ExecutionPolicy Bypass -Command "cd '%~dp0' && npm run dev" 

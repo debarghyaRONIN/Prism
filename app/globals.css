@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .btn-primary {
+    @apply bg-gradient-to-r from-primary-500 to-secondary-500 text-white font-medium py-2 px-4 rounded-md hover:opacity-90 transition-opacity;
+  }
+  
+  .btn-outline {
+    @apply border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 font-medium py-2 px-4 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors;
+  }
+  
+  .btn-danger {
+    @apply bg-gradient-to-r from-red-500 to-red-600 text-white font-medium py-2 px-4 rounded-md hover:opacity-90 transition-opacity;
+  }
+
+  .focus-mode {
+    @apply fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4;
+  }
+  
+  .task-card {
+    @apply bg-white dark:bg-neutral-900 rounded-lg shadow-sm p-0 border border-transparent transition-all duration-200;
+  }
+  
+  .task-card.active {
+    @apply shadow-md border-primary-300 dark:border-primary-700;
+  }
+  
+  .task-card.dragging {
+    @apply shadow-lg;
+  }
+  
+  .task-card-urgent {
+    @apply border-l-4 border-danger-500;
+  }
+  
+  .task-card-high {
+    @apply border-l-4 border-warning-500;
+  }
+  
+  .task-card-medium {
+    @apply border-l-4 border-primary-500;
+  }
+  
+  .task-card-low {
+    @apply border-l-4 border-success-500;
+  }
+} 
