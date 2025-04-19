@@ -25,7 +25,7 @@ interface TimelineProps {
   onClose: () => void;
 }
 
-type ViewMode = 'timeline' | 'overview' | 'mobile';
+type ViewMode = 'timeline' | 'overview';
 
 // Task statuses with respective icons and colors
 const statusConfig: Record<string, { icon: React.ElementType; color: string }> = {
@@ -52,32 +52,92 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onClose }) => {
   const [touchCount, setTouchCount] = useState(0);
   const [viewOffset, setViewOffset] = useState({ x: 0, y: 0 });
   const [isMobile, setIsMobile] = useState(false);
+  const [isLandscape, setIsLandscape] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const dragControls = useDragControls();
 
-  // Detect mobile device on component mount
+  // Detect mobile device and enforce landscape orientation
   useEffect(() => {
-    const checkIsMobile = () => {
+    const checkDeviceAndOrientation = () => {
       const mobileQuery = window.matchMedia('(max-width: 768px)');
+      const isLandscapeOrientation = window.innerWidth > window.innerHeight;
       setIsMobile(mobileQuery.matches);
+      setIsLandscape(isLandscapeOrientation);
       
-      // If on mobile device, default to mobile view
+      // Force landscape orientation message if in portrait mode on mobile
+      if (window.innerHeight > window.innerWidth && mobileQuery.matches) {
+        const landscapeMessage = document.getElementById('landscape-message');
+        if (landscapeMessage) {
+          landscapeMessage.style.display = 'flex';
+        } else {
+          const message = document.createElement('div');
+          message.id = 'landscape-message';
+          message.style.position = 'fixed';
+          message.style.inset = '0';
+          message.style.backgroundColor = 'rgba(0,0,0,0.9)';
+          message.style.color = 'white';
+          message.style.zIndex = '9999';
+          message.style.display = 'flex';
+          message.style.flexDirection = 'column';
+          message.style.alignItems = 'center';
+          message.style.justifyContent = 'center';
+          message.style.textAlign = 'center';
+          message.style.padding = '20px';
+          message.innerHTML = `
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 12H3M21 12L15 6M21 12L15 18" />
+            </svg>
+            <h2 style="margin: 16px 0; font-size: 24px;">Please rotate your device</h2>
+            <p>This application is optimized for landscape orientation</p>
+          `;
+          document.body.appendChild(message);
+        }
+      } else {
+        const landscapeMessage = document.getElementById('landscape-message');
+        if (landscapeMessage) {
+          landscapeMessage.style.display = 'none';
+        }
+      }
+      
+      // Add classes for responsive styling
       if (mobileQuery.matches) {
-        setViewMode('mobile');
+        document.documentElement.classList.add('mobile-device');
+        if (isLandscapeOrientation) {
+          document.documentElement.classList.add('landscape');
+          document.documentElement.classList.remove('portrait');
+        } else {
+          document.documentElement.classList.add('portrait');
+          document.documentElement.classList.remove('landscape');
+        }
+      } else {
+        document.documentElement.classList.remove('mobile-device', 'portrait', 'landscape');
       }
     };
     
     // Check initially
-    checkIsMobile();
+    checkDeviceAndOrientation();
     
-    // Add listener for screen size changes
+    // Add listeners for screen size and orientation changes
     const mobileQuery = window.matchMedia('(max-width: 768px)');
-    mobileQuery.addEventListener('change', checkIsMobile);
+    mobileQuery.addEventListener('change', checkDeviceAndOrientation);
+    window.addEventListener('resize', checkDeviceAndOrientation);
+    window.addEventListener('orientationchange', checkDeviceAndOrientation);
     
     // Cleanup
     return () => {
-      mobileQuery.removeEventListener('change', checkIsMobile);
+      mobileQuery.removeEventListener('change', checkDeviceAndOrientation);
+      window.removeEventListener('resize', checkDeviceAndOrientation);
+      window.removeEventListener('orientationchange', checkDeviceAndOrientation);
+      
+      // Remove the landscape message if it exists
+      const landscapeMessage = document.getElementById('landscape-message');
+      if (landscapeMessage) {
+        document.body.removeChild(landscapeMessage);
+      }
+      
+      // Remove classes
+      document.documentElement.classList.remove('mobile-device', 'portrait', 'landscape');
     };
   }, []);
 
@@ -102,55 +162,58 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onClose }) => {
 
   // Calculate positions for tasks
   useEffect(() => {
-    if (viewMode !== 'timeline' || !containerRef.current) return;
+    if (viewMode === 'timeline' && containerRef.current) {
+      // Define a fixed width for task nodes
+      const nodeWidth = 240;
+      const nodeHeight = 100;
+      const horizontalSpacing = 300; // Space between columns
+      const verticalSpacing = 200; // Space between rows
 
-    // Define a fixed width for task nodes
-    const nodeWidth = 240;
-    const nodeHeight = 100;
-    const horizontalSpacing = 300; // Space between columns
-    const verticalSpacing = 200; // Space between rows
+      // Group tasks by month
+      const tasksByMonth: {[key: string]: Task[]} = {};
+      sortedTasks.forEach(task => {
+        if (!task.dueDate) return;
+        
+        const monthKey = format(
+          task.dueDate instanceof Date ? task.dueDate : parseISO(task.dueDate), 
+          'yyyy-MM'
+        );
+        
+        if (!tasksByMonth[monthKey]) {
+          tasksByMonth[monthKey] = [];
+        }
+        tasksByMonth[monthKey].push(task);
+      });
 
-    // Group tasks by month
-    const tasksByMonth: {[key: string]: Task[]} = {};
-    sortedTasks.forEach(task => {
-      if (!task.dueDate) return;
-      
-      const monthKey = format(
-        task.dueDate instanceof Date ? task.dueDate : parseISO(task.dueDate), 
-        'yyyy-MM'
-      );
-      
-      if (!tasksByMonth[monthKey]) {
-        tasksByMonth[monthKey] = [];
-      }
-      tasksByMonth[monthKey].push(task);
-    });
+      // Calculate positions
+      const newPositions: {[key: string]: {x: number, y: number}} = {};
+      let monthIndex = 0;
 
-    // Calculate positions
-    const newPositions: {[key: string]: {x: number, y: number}} = {};
-    let monthIndex = 0;
+      Object.entries(tasksByMonth).forEach(([month, monthTasks]) => {
+        // For each month, create a new column
+        monthTasks.forEach((task, taskIndex) => {
+          newPositions[task.id] = {
+            x: monthIndex * horizontalSpacing + 100,
+            y: taskIndex * verticalSpacing + 100
+          };
+        });
+        monthIndex++;
+      });
 
-    Object.entries(tasksByMonth).forEach(([month, monthTasks]) => {
-      // For each month, create a new column
-      monthTasks.forEach((task, taskIndex) => {
+      // Position tasks without due dates at the end
+      const tasksWithoutDueDate = sortedTasks.filter(task => !task.dueDate);
+      tasksWithoutDueDate.forEach((task, index) => {
         newPositions[task.id] = {
           x: monthIndex * horizontalSpacing + 100,
-          y: taskIndex * verticalSpacing + 100
+          y: index * verticalSpacing + 100
         };
       });
-      monthIndex++;
-    });
 
-    // Position tasks without due dates at the end
-    const tasksWithoutDueDate = sortedTasks.filter(task => !task.dueDate);
-    tasksWithoutDueDate.forEach((task, index) => {
-      newPositions[task.id] = {
-        x: monthIndex * horizontalSpacing + 100,
-        y: index * verticalSpacing + 100
-      };
-    });
-
-    setTaskPositions(newPositions);
+      setTaskPositions(newPositions);
+    } else if (viewMode === 'overview' && containerRef.current) {
+      // In overview mode, positions are handled by CSS grid
+      // We don't need to set positions manually
+    }
   }, [sortedTasks, viewMode]);
 
   // Group tasks by status
@@ -171,10 +234,8 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onClose }) => {
     return byStatus;
   };
 
-  // Handle touch gesture events for mobile view
+  // Handle touch gesture events
   const handleTouchStart = (e: React.TouchEvent, taskId: string) => {
-    if (viewMode !== 'mobile') return;
-    
     // Store how many fingers are touching the screen
     setTouchCount(e.touches.length);
     
@@ -186,7 +247,7 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onClose }) => {
         if (navigator.vibrate) {
           navigator.vibrate(100);
         }
-      }, 800); // Reduced from 2000ms to 800ms for better responsiveness
+      }, 800); // 0.8 seconds for better responsiveness
     }
     
     // For two finger touches, prepare for panning the view
@@ -201,7 +262,7 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onClose }) => {
     }
   };
   
-  // Handle task actions for mobile view
+  // Handle task actions
   const handleTaskAction = (action: 'edit' | 'delete', taskId: string) => {
     // Close the menu
     setActiveTaskMenu(null);
@@ -220,8 +281,6 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onClose }) => {
   
   // Enhanced touch move handler with inertial scrolling
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (viewMode !== 'mobile') return;
-    
     // Cancel long press if the finger moves significantly
     if (longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current);
@@ -249,10 +308,14 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onClose }) => {
       const deltaX = currentMidX - prevMidX;
       const deltaY = currentMidY - prevMidY;
       
-      // Update view offset based on the delta with improved sensitivity
+      // Adjust sensitivity for landscape orientation
+      const xSensitivity = isLandscape ? 1.2 : 1.0;
+      const ySensitivity = isLandscape ? 1.0 : 1.2;
+      
+      // Update view offset based on the delta with orientation-specific sensitivity
       setViewOffset(prev => ({
-        x: prev.x + deltaX * 1.0, // Increased from 0.5 to 1.0 for better responsiveness
-        y: prev.y + deltaY * 1.0
+        x: prev.x + deltaX * xSensitivity,
+        y: prev.y + deltaY * ySensitivity
       }));
       
       // Store current positions for next delta calculation
@@ -263,8 +326,6 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onClose }) => {
   
   // Enhanced touch end handler with inertia effect
   const handleTouchEnd = (e: React.TouchEvent) => {
-    if (viewMode !== 'mobile') return;
-    
     // Update the touch count
     setTouchCount(e.touches.length);
     
@@ -294,66 +355,37 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onClose }) => {
   
   // Handle dragging for tasks in mobile view
   const handleDragEnd = (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo, taskId: string) => {
-    if (viewMode !== 'mobile' || !selectedTask) return;
-    
-    // Update the task position with enhanced movement
-    setTaskPositions(prev => ({
-      ...prev,
-      [taskId]: {
-        x: prev[taskId]?.x + info.offset.x || info.offset.x,
-        y: prev[taskId]?.y + info.offset.y || info.offset.y
+    if (isMobile && selectedTask) {
+      // Update the task position with enhanced movement
+      setTaskPositions(prev => ({
+        ...prev,
+        [taskId]: {
+          x: prev[taskId]?.x + info.offset.x || info.offset.x,
+          y: prev[taskId]?.y + info.offset.y || info.offset.y
+        }
+      }));
+      
+      // Provide haptic feedback when drag ends
+      if (navigator.vibrate) {
+        navigator.vibrate(50);
       }
-    }));
-    
-    // Provide haptic feedback when drag ends
-    if (navigator.vibrate) {
-      navigator.vibrate(50);
+      
+      // Clear selected task after moving
+      setSelectedTask(null);
     }
-    
-    // Clear selected task after moving
-    setSelectedTask(null);
   };
 
-  // Mobile view layout
-  useEffect(() => {
-    if (viewMode !== 'mobile' || !containerRef.current) return;
-    
-    // Get container dimensions
-    const containerRect = containerRef.current.getBoundingClientRect();
-    const containerWidth = containerRect.width || 400;
-    const containerHeight = containerRect.height || 600;
-    
-    // Create a grid layout for mobile
-    const newPositions: {[key: string]: {x: number, y: number}} = {};
-    const columns = containerWidth > 500 ? 2 : 1;
-    const cardWidth = (containerWidth / columns) - 20;
-    const cardHeight = 120;
-    const margin = 10;
-    
-    // Position tasks in a scrollable grid
-    sortedTasks.forEach((task, index) => {
-      const column = index % columns;
-      const row = Math.floor(index / columns);
-      
-      newPositions[task.id] = {
-        x: column * (cardWidth + margin) + margin,
-        y: row * (cardHeight + margin) + margin
-      };
-    });
-    
-    setTaskPositions(newPositions);
-  }, [sortedTasks, viewMode]);
-
-  // Render a task node with enhanced mobile support
+  // Render a task node with responsive support
   const renderTaskNode = (task: Task, index: number) => {
     const StatusIcon = statusConfig[task.status]?.icon || FaRegCircle;
     const statusColor = statusConfig[task.status]?.color || 'text-neutral-500';
     const priorityColor = priorityColors[task.priority] || 'bg-neutral-500';
     
-    // Determine appropriate width based on viewport and view mode
+    // Determine appropriate width based on viewport
     const getTaskWidth = () => {
-      if (viewMode === 'mobile') {
-        return isMobile ? 'calc(100% - 24px)' : '320px'; // Adjusted for better visibility
+      // Check if we're in landscape
+      if (isMobile) {
+        return isLandscape ? '320px' : 'calc(100% - 24px)';
       } else {
         return '240px';
       }
@@ -364,7 +396,7 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onClose }) => {
       top: `${taskPositions[task.id].y}px`,
       zIndex: selectedTask === task.id ? 20 : (activeTaskMenu === task.id ? 25 : 15),
       width: getTaskWidth(),
-      maxWidth: viewMode === 'mobile' ? '100%' : '240px',
+      maxWidth: isMobile ? '100%' : '240px',
       touchAction: isPanning ? 'none' : 'auto', // Improved touch handling
     } : {};
     
@@ -379,12 +411,12 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onClose }) => {
         animate={{ 
           opacity: 1, 
           scale: selectedTask === task.id ? 1.05 : 1,
-          x: viewMode === 'mobile' ? viewOffset.x : 0,
-          y: viewMode === 'mobile' ? viewOffset.y : 0
+          x: isMobile ? viewOffset.x : 0,
+          y: isMobile ? viewOffset.y : 0
         }}
         exit={{ opacity: 0, scale: 0.8 }}
         transition={{ duration: 0.2 }} // Faster animation for better responsiveness
-        drag={viewMode === 'mobile' && selectedTask === task.id}
+        drag={isMobile && selectedTask === task.id}
         dragControls={dragControls}
         onDragEnd={(e, info) => handleDragEnd(e, info, task.id)}
         onTouchStart={(e) => handleTouchStart(e, task.id)}
@@ -405,7 +437,7 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onClose }) => {
               <div className={`h-3 w-3 rounded-full ${priorityColor} mr-2`} title={`Priority: ${task.priority}`}></div>
             )}
             {/* Mobile action menu button */}
-            {viewMode === 'mobile' && (
+            {isMobile && (
               <button 
                 className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 p-1"
                 onClick={(e) => {
@@ -421,7 +453,7 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onClose }) => {
         </div>
         
         {/* Mobile action menu */}
-        {activeTaskMenu === task.id && viewMode === 'mobile' && (
+        {activeTaskMenu === task.id && isMobile && (
           <div className="absolute right-2 top-8 bg-white dark:bg-neutral-700 shadow-lg rounded-md py-1 z-30">
             <button 
               className="flex items-center w-full px-4 py-2 text-sm text-left hover:bg-neutral-100 dark:hover:bg-neutral-600"
@@ -462,6 +494,24 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onClose }) => {
     );
   };
 
+  // Helper function to safely format a date
+  const formatDate = (date: Date | string | undefined) => {
+    if (!date) return '';
+    
+    // If it's already a Date object
+    if (date instanceof Date) {
+      return format(date, 'MMM d, yyyy');
+    } 
+    
+    // If it's a string, try to parse it
+    try {
+      return format(parseISO(date), 'MMM d, yyyy');
+    } catch (error) {
+      console.error('Error parsing date:', error);
+      return 'Invalid date';
+    }
+  };
+  
   // Render mobile-friendly timeline markers
   const renderTimeMarkers = () => {
     if (viewMode !== 'timeline' || sortedTasks.length === 0) return null;
@@ -517,24 +567,6 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onClose }) => {
     );
   };
   
-  // Function to safely format a date
-  const formatDate = (date: Date | string | undefined) => {
-    if (!date) return '';
-    
-    // If it's already a Date object
-    if (date instanceof Date) {
-      return format(date, 'MMM d, yyyy');
-    } 
-    
-    // If it's a string, try to parse it
-    try {
-      return format(parseISO(date), 'MMM d, yyyy');
-    } catch (error) {
-      console.error('Error parsing date:', error);
-      return 'Invalid date';
-    }
-  };
-  
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -582,27 +614,17 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onClose }) => {
             <BsCardList className="mr-1 md:mr-2" />
             <span className="text-sm md:text-base">Overview</span>
           </button>
-          <button
-            onClick={() => setViewMode('mobile')}
-            className={`flex items-center px-2 md:px-4 py-2 rounded-md whitespace-nowrap ${
-              viewMode === 'mobile' 
-                ? 'bg-white dark:bg-neutral-700 shadow-sm text-primary-600 dark:text-primary-400' 
-                : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200'
-            }`}
-          >
-            <BsPhone className="mr-1 md:mr-2" />
-            <span className="text-sm md:text-base">Mobile</span>
-          </button>
         </div>
       </div>
 
-      {/* Mobile view instructions - only show when in mobile view */}
-      {viewMode === 'mobile' && (
+      {/* Touch gestures help for mobile devices */}
+      {isMobile && (
         <div className="p-2 bg-blue-50 dark:bg-blue-900/20 text-xs text-blue-700 dark:text-blue-300 border-b border-blue-100 dark:border-blue-800">
           <ul className="list-disc pl-5">
-            <li>Long press (2 seconds) on a task to select and move it</li>
-            <li>Use two fingers to pan around the dashboard</li>
+            <li>Long press (<span className="font-bold">0.8 seconds</span>) on a task to select and move it</li>
+            <li>Use two fingers to pan around the workspace</li>
             <li>Tap the three dots to access task options</li>
+            <li>For best experience, use landscape orientation</li>
           </ul>
         </div>
       )}
@@ -696,24 +718,11 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onClose }) => {
             ))}
           </div>
         )}
-
-        {viewMode === 'mobile' && (
-          <div 
-            className="relative min-h-[800px]"
-            style={{ 
-              touchAction: isPanning ? 'none' : 'auto' // Disable browser touch actions when panning
-            }}
-          >
-            <AnimatePresence>
-              {sortedTasks.map((task, index) => renderTaskNode(task, index))}
-            </AnimatePresence>
-            
-            {/* Mobile touch indicators */}
-            {touchCount > 0 && (
-              <div className="fixed bottom-4 right-4 bg-black/70 text-white px-3 py-1 rounded-full text-xs">
-                {touchCount} finger{touchCount !== 1 ? 's' : ''} {selectedTask ? '• Task selected' : ''}
-              </div>
-            )}
+        
+        {/* Touch indicators for mobile */}
+        {isMobile && touchCount > 0 && (
+          <div className="fixed bottom-4 right-4 bg-black/70 text-white px-3 py-1 rounded-full text-xs">
+            {touchCount} finger{touchCount !== 1 ? 's' : ''} {selectedTask ? '• Task selected' : ''}
           </div>
         )}
       </div>
