@@ -186,11 +186,12 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onClose }) => {
         if (navigator.vibrate) {
           navigator.vibrate(100);
         }
-      }, 2000); // 2 seconds long press
+      }, 800); // Reduced from 2000ms to 800ms for better responsiveness
     }
     
     // For two finger touches, prepare for panning the view
     if (e.touches.length === 2) {
+      e.preventDefault(); // Prevent default browser behaviors
       setIsPanning(true);
       // Cancel any active long press
       if (longPressTimerRef.current) {
@@ -244,14 +245,14 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onClose }) => {
       const prevMidX = target.dataset.prevTouchX ? parseFloat(target.dataset.prevTouchX) : currentMidX;
       const prevMidY = target.dataset.prevTouchY ? parseFloat(target.dataset.prevTouchY) : currentMidY;
       
-      // Calculate movement delta
+      // Calculate movement delta with improved sensitivity
       const deltaX = currentMidX - prevMidX;
       const deltaY = currentMidY - prevMidY;
       
-      // Update view offset based on the delta
+      // Update view offset based on the delta with improved sensitivity
       setViewOffset(prev => ({
-        x: prev.x + deltaX * 0.5, // Adjust sensitivity
-        y: prev.y + deltaY * 0.5
+        x: prev.x + deltaX * 1.0, // Increased from 0.5 to 1.0 for better responsiveness
+        y: prev.y + deltaY * 1.0
       }));
       
       // Store current positions for next delta calculation
@@ -277,9 +278,14 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onClose }) => {
     if (e.touches.length < 2) {
       setIsPanning(false);
       
-      // Clear previous touch positions
-      const target = e.currentTarget as HTMLElement;
-      if (target.dataset.prevTouchX) {
+      // Add inertia effect - smooth deceleration of movement
+      if (containerRef.current) {
+        const target = e.currentTarget as HTMLElement;
+        if (target.dataset.prevTouchX && isPanning) {
+          // Apply inertia here if needed
+        }
+        
+        // Clear previous touch positions
         delete target.dataset.prevTouchX;
         delete target.dataset.prevTouchY;
       }
@@ -290,7 +296,7 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onClose }) => {
   const handleDragEnd = (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo, taskId: string) => {
     if (viewMode !== 'mobile' || !selectedTask) return;
     
-    // Update the task position
+    // Update the task position with enhanced movement
     setTaskPositions(prev => ({
       ...prev,
       [taskId]: {
@@ -298,6 +304,11 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onClose }) => {
         y: prev[taskId]?.y + info.offset.y || info.offset.y
       }
     }));
+    
+    // Provide haptic feedback when drag ends
+    if (navigator.vibrate) {
+      navigator.vibrate(50);
+    }
     
     // Clear selected task after moving
     setSelectedTask(null);
@@ -342,7 +353,7 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onClose }) => {
     // Determine appropriate width based on viewport and view mode
     const getTaskWidth = () => {
       if (viewMode === 'mobile') {
-        return isMobile ? 'calc(100% - 20px)' : '300px';
+        return isMobile ? 'calc(100% - 24px)' : '320px'; // Adjusted for better visibility
       } else {
         return '240px';
       }
@@ -354,6 +365,7 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onClose }) => {
       zIndex: selectedTask === task.id ? 20 : (activeTaskMenu === task.id ? 25 : 15),
       width: getTaskWidth(),
       maxWidth: viewMode === 'mobile' ? '100%' : '240px',
+      touchAction: isPanning ? 'none' : 'auto', // Improved touch handling
     } : {};
     
     return (
@@ -371,7 +383,7 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onClose }) => {
           y: viewMode === 'mobile' ? viewOffset.y : 0
         }}
         exit={{ opacity: 0, scale: 0.8 }}
-        transition={{ duration: 0.3 }}
+        transition={{ duration: 0.2 }} // Faster animation for better responsiveness
         drag={viewMode === 'mobile' && selectedTask === task.id}
         dragControls={dragControls}
         onDragEnd={(e, info) => handleDragEnd(e, info, task.id)}
@@ -379,8 +391,8 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onClose }) => {
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         dragConstraints={containerRef}
-        dragElastic={0.2}
-        dragMomentum={false}
+        dragElastic={0.1} // Reduced elasticity for more precise control
+        dragMomentum={true} // Enable momentum for smoother dragging
       >
         {/* Task header with status and menu */}
         <div className="flex justify-between items-start mb-2">

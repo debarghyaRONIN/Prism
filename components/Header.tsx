@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import Link from 'next/link';
 
 interface HeaderProps {
@@ -21,6 +21,25 @@ export default function Header({
 }: HeaderProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  
+  // Check if device is mobile
+  useEffect(() => {
+    const checkIsMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    // Initial check
+    checkIsMobile();
+    
+    // Add resize listener
+    window.addEventListener('resize', checkIsMobile);
+    
+    return () => {
+      window.removeEventListener('resize', checkIsMobile);
+    };
+  }, []);
   
   // Get initials from the user's name
   const getInitials = (name: string) => {
@@ -61,6 +80,37 @@ export default function Header({
             <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary-500 to-secondary-500">Prism</h1>
           </motion.div>
           
+          {/* Mobile menu button */}
+          <button 
+            className="md:hidden flex items-center"
+            onClick={() => setShowMobileMenu(!showMobileMenu)}
+            aria-label="Toggle mobile menu"
+          >
+            <svg 
+              width="24" 
+              height="24" 
+              viewBox="0 0 24 24" 
+              fill="none" 
+              stroke="currentColor" 
+              strokeWidth="2" 
+              strokeLinecap="round" 
+              strokeLinejoin="round"
+              className={`transition-transform duration-300 ${showMobileMenu ? 'rotate-90' : ''}`}
+            >
+              {showMobileMenu ? (
+                <>
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </>
+              ) : (
+                <>
+                  <line x1="4" y1="8" x2="20" y2="8" />
+                  <line x1="4" y1="16" x2="20" y2="16" />
+                </>
+              )}
+            </svg>
+          </button>
+          
           <nav className="hidden md:flex items-center gap-4">
             <motion.button
               {...{
@@ -95,7 +145,7 @@ export default function Header({
         </div>
         
         <div className="flex items-center gap-4">
-          <div className="relative">
+          <div className={`relative ${isMobile ? 'hidden' : 'block'}`}>
             <input
               type="text"
               placeholder="Search tasks..."
@@ -121,7 +171,7 @@ export default function Header({
           
           <motion.button
             {...{
-              className: "btn-primary",
+              className: `btn-primary ${isMobile ? 'hidden' : 'flex'}`,
               whileHover: { scale: 1.05 },
               whileTap: { scale: 0.95 },
               onClick: onToggleFocusMode
@@ -180,6 +230,77 @@ export default function Header({
           </div>
         </div>
       </div>
+      
+      {/* Mobile menu */}
+      <AnimatePresence>
+        {showMobileMenu && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.3 }}
+            className="md:hidden mt-4 border-t border-neutral-200 dark:border-neutral-800"
+          >
+            <div className="py-3 space-y-3">
+              <button className="w-full text-left px-3 py-2 font-medium hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-md">
+                Dashboard
+              </button>
+              <button 
+                className="w-full text-left px-3 py-2 font-medium hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-md"
+                onClick={() => {
+                  onToggleTimeline();
+                  setShowMobileMenu(false);
+                }}
+              >
+                Timeline
+              </button>
+              <button 
+                className="w-full text-left px-3 py-2 font-medium hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-md"
+                onClick={() => {
+                  if (onToggleAnalytics) onToggleAnalytics();
+                  setShowMobileMenu(false);
+                }}
+              >
+                Analytics
+              </button>
+              <button 
+                className="w-full text-left px-3 py-2 font-medium hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-md"
+                onClick={() => {
+                  onToggleFocusMode();
+                  setShowMobileMenu(false);
+                }}
+              >
+                Focus Mode
+              </button>
+              
+              {/* Mobile search */}
+              <div className="relative px-3 pt-2">
+                <input
+                  type="text"
+                  placeholder="Search tasks..."
+                  className="w-full px-4 py-2 pl-10 rounded-md border border-neutral-300 dark:border-neutral-700 bg-neutral-100 dark:bg-neutral-800"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+                <svg
+                  className="absolute left-6 top-4.5 text-neutral-400"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </header>
   );
 } 

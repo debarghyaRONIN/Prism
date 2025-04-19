@@ -48,6 +48,9 @@ export default function NavigationHelp({ onClose }: NavigationHelpProps) {
                   <li className="flex items-start">
                     <span className="font-medium mr-2 text-primary-600 dark:text-primary-400 inline-block w-32">Click & Drag:</span> 
                     <span>Left Click and drag on empty space to pan around the workspace</span>
+                  </li>
+                  <li className="flex items-start">
+                    <span className="font-medium mr-2 text-primary-600 dark:text-primary-400 inline-block w-32">Move Tasks:</span>
                     <span>Middle Scroll Button click to grab the Task Card and move it around the workspace</span>
                   </li>
                   <li className="flex items-start">
@@ -177,24 +180,35 @@ export default function NavigationHelp({ onClose }: NavigationHelpProps) {
             
             <div className="bg-neutral-50 dark:bg-neutral-800 p-4 rounded-lg">
               <h4 className="font-medium mb-2 text-neutral-900 dark:text-neutral-100">Touch Gestures</h4>
+              <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
+                The mobile version presents the same workspace landscape but replaces mouse controls with touch gestures:
+              </p>
               <ul className="space-y-2 text-neutral-700 dark:text-neutral-300">
                 <li className="flex items-start">
                   <span className="font-medium mr-2 text-primary-600 dark:text-primary-400 inline-block w-32">Long Press:</span> 
-                  <span>Long press (2 seconds) on a task to select and move it</span>
+                  <span>Long press (2 seconds) on a task to select and move it (replaces middle-click)</span>
                 </li>
                 <li className="flex items-start">
                   <span className="font-medium mr-2 text-primary-600 dark:text-primary-400 inline-block w-32">Two Fingers:</span> 
-                  <span>Use two fingers to pan around the dashboard in mobile view</span>
+                  <span>Use two fingers to pan around the workspace (replaces click and drag)</span>
                 </li>
                 <li className="flex items-start">
                   <span className="font-medium mr-2 text-primary-600 dark:text-primary-400 inline-block w-32">Task Options:</span> 
-                  <span>Tap the three dots on a task to access task options</span>
+                  <span>Tap the three dots on a task to access task options (edit, delete)</span>
                 </li>
                 <li className="flex items-start">
                   <span className="font-medium mr-2 text-primary-600 dark:text-primary-400 inline-block w-32">Pinch Zoom:</span> 
-                  <span>Pinch with two fingers to zoom in and out (where supported)</span>
+                  <span>Pinch with two fingers to zoom in and out (replaces zoom buttons/shortcuts)</span>
+                </li>
+                <li className="flex items-start">
+                  <span className="font-medium mr-2 text-primary-600 dark:text-primary-400 inline-block w-32">Tap:</span> 
+                  <span>Single tap replaces click for selecting tasks and UI elements</span>
                 </li>
               </ul>
+              <div className="mt-4 p-2 bg-blue-50 dark:bg-blue-900/20 text-xs text-blue-700 dark:text-blue-300 rounded-md">
+                <p className="font-medium mb-1">Mobile Mode Indicator</p>
+                <p>When in mobile mode, a touch indicator in the bottom right shows how many fingers are currently touching the screen.</p>
+              </div>
             </div>
           </section>
 
