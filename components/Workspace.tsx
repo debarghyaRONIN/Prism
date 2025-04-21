@@ -949,9 +949,9 @@ const Workspace = forwardRef<WorkspaceHandle, WorkspaceProps>(
         // Assign regions for each project to keep them somewhat grouped
         const projectRegions: Record<string, {startX: number, startY: number, width: number, height: number}> = {
           'Design System': { startX: 0, startY: 0, width: 10, height: 10 },
-          'Mobile App': { startX: 10, startY: 0, width: 10, height: 10 },
+          'Mobile App': { startX: 0, startY: 0, width: 10, height: 10 },
           'Marketing Website': { startX: 0, startY: 10, width: 10, height: 10 },
-          'Backend API': { startX: 10, startY: 10, width: 10, height: 10 }
+          'Backend API': { startX: 0, startY: 10, width: 10, height: 10 }
         };
         
         // Function to find an unoccupied cell in a region
